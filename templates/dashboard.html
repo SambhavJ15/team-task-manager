@@ -1,0 +1,537 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="app-container">
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <i class="fas fa-bolt"></i>
+            <span>TaskFlow</span>
+        </div>
+        <div class="nav-search">
+            <i class="fas fa-search"></i>
+            <input type="text" placeholder="Search tasks, projects..." id="global-search">
+        </div>
+        <div class="nav-user">
+            <div class="user-avatar" id="userAvatar">
+                <i class="fas fa-user-astronaut"></i>
+            </div>
+            <div class="user-dropdown" id="userDropdown">
+                <div class="dropdown-header">
+                    <strong id="dropdownUsername"></strong>
+                    <span id="dropdownRole"></span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <button onclick="handleLogout()" class="dropdown-item">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="main-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar-compact">
+            <div class="sidebar-nav">
+                <button class="nav-item active" data-view="dashboard">
+                    <i class="fas fa-chart-pie"></i>
+                    <span>Overview</span>
+                </button>
+                <button class="nav-item" data-view="projects">
+                    <i class="fas fa-layer-group"></i>
+                    <span>Projects</span>
+                </button>
+                <button class="nav-item" data-view="tasks">
+                    <i class="fas fa-check-double"></i>
+                    <span>Tasks</span>
+                </button>
+                <button class="nav-item" data-view="team">
+                    <i class="fas fa-users"></i>
+                    <span>Team</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content-area">
+            <!-- Dashboard View -->
+            <div id="dashboard-view" class="view active">
+                <div class="view-header">
+                    <h2>Dashboard</h2>
+                    <div class="date-chip" id="liveDate"></div>
+                </div>
+                <div class="stats-grid" id="statsGrid"></div>
+                <div class="activity-section">
+                    <div class="section-title">
+                        <i class="fas fa-history"></i>
+                        <h3>Recent Activity</h3>
+                    </div>
+                    <div id="recentList" class="activity-list"></div>
+                </div>
+            </div>
+
+            <!-- Projects View -->
+            <div id="projects-view" class="view">
+                <div class="view-header">
+                    <h2>Projects</h2>
+                    <button class="fab-btn" onclick="openProjectModal()">
+                        <i class="fas fa-plus"></i> New Project
+                    </button>
+                </div>
+                <div id="projectsGrid" class="projects-grid"></div>
+            </div>
+
+            <!-- Tasks View -->
+            <div id="tasks-view" class="view">
+                <div class="view-header">
+                    <h2>Tasks</h2>
+                    <button class="fab-btn" onclick="openTaskModal()">
+                        <i class="fas fa-plus"></i> New Task
+                    </button>
+                </div>
+                <div class="task-filters">
+                    <button class="filter-chip active" data-filter="all">All</button>
+                    <button class="filter-chip" data-filter="pending">Pending</button>
+                    <button class="filter-chip" data-filter="in-progress">In Progress</button>
+                    <button class="filter-chip" data-filter="completed">Completed</button>
+                </div>
+                <div id="tasksContainer" class="tasks-board"></div>
+            </div>
+
+            <!-- Team View -->
+            <div id="team-view" class="view">
+                <div class="view-header">
+                    <h2>Team Members</h2>
+                </div>
+                <div id="teamGrid" class="team-grid"></div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Project Modal -->
+<div id="projectModal" class="modal-overlay">
+    <div class="modal-modern">
+        <div class="modal-header">
+            <h3><i class="fas fa-rocket"></i> Create Project</h3>
+            <button class="modal-close" onclick="closeProjectModal()">&times;</button>
+        </div>
+        <form id="projectForm" onsubmit="createProject(event)">
+            <input type="text" id="projName" placeholder="Project name" required>
+            <textarea id="projDesc" rows="3" placeholder="Description (optional)"></textarea>
+            <button type="submit" class="btn-primary">Create Project</button>
+        </form>
+    </div>
+</div>
+
+<!-- Task Modal -->
+<div id="taskModal" class="modal-overlay">
+    <div class="modal-modern">
+        <div class="modal-header">
+            <h3><i class="fas fa-tasks"></i> Create Task</h3>
+            <button class="modal-close" onclick="closeTaskModal()">&times;</button>
+        </div>
+        <form id="taskForm" onsubmit="createTask(event)">
+            <input type="text" id="taskTitle" placeholder="Task title" required>
+            <textarea id="taskDesc" rows="2" placeholder="Description"></textarea>
+            <select id="taskProjectId" required>
+                <option value="">Select project</option>
+            </select>
+            <select id="taskAssigneeId" required>
+                <option value="">Assign to</option>
+            </select>
+            <select id="taskPriority">
+                <option value="low">🟢 Low</option>
+                <option value="medium" selected>🟡 Medium</option>
+                <option value="high">🔴 High</option>
+            </select>
+            <input type="datetime-local" id="taskDueDate" required>
+            <button type="submit" class="btn-primary">Create Task</button>
+        </form>
+    </div>
+</div>
+
+<script>
+let currentUser = null;
+let allTasks = [];
+
+// Set live date
+document.getElementById('liveDate').innerHTML = `<i class="far fa-calendar"></i> ${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`;
+
+// User dropdown
+const avatar = document.getElementById('userAvatar');
+const dropdown = document.getElementById('userDropdown');
+avatar.addEventListener('click', () => dropdown.classList.toggle('show'));
+document.addEventListener('click', (e) => {
+    if (!avatar.contains(e.target)) dropdown.classList.remove('show');
+});
+
+// Navigation
+document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(`${view}-view`).classList.add('active');
+        
+        if (view === 'dashboard') loadDashboard();
+        else if (view === 'projects') loadProjects();
+        else if (view === 'tasks') loadTasks();
+        else if (view === 'team') loadTeam();
+    });
+});
+
+// Task filters
+document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        renderTasks(allTasks);
+    });
+});
+
+// Search functionality
+document.getElementById('global-search').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    if (document.getElementById('tasks-view').classList.contains('active')) {
+        const filtered = allTasks.filter(t => t.title.toLowerCase().includes(term));
+        renderTasks(filtered);
+    }
+});
+
+async function loadUser() {
+    try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+            currentUser = await response.json();
+            document.getElementById('dropdownUsername').innerText = currentUser.username;
+            document.getElementById('dropdownRole').innerText = currentUser.role?.toUpperCase() || 'MEMBER';
+        } else {
+            window.location.href = '/';
+        }
+    } catch(e) {
+        console.error('Error loading user:', e);
+        window.location.href = '/';
+    }
+}
+
+async function loadDashboard() {
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const stats = await response.json();
+        
+        document.getElementById('statsGrid').innerHTML = `
+            <div class="stat-card"><i class="fas fa-tasks"></i><div><h3>${stats.total_tasks || 0}</h3><p>Total Tasks</p></div></div>
+            <div class="stat-card"><i class="fas fa-check-circle"></i><div><h3>${stats.completed_tasks || 0}</h3><p>Completed</p></div></div>
+            <div class="stat-card"><i class="fas fa-hourglass-half"></i><div><h3>${stats.pending_tasks || 0}</h3><p>Pending</p></div></div>
+            <div class="stat-card"><i class="fas fa-chart-line"></i><div><h3>${Math.round(stats.completion_rate || 0)}%</h3><p>Completion</p><div class="progress-bar"><div style="width:${stats.completion_rate || 0}%"></div></div></div></div>
+            <div class="stat-card warning"><i class="fas fa-exclamation-triangle"></i><div><h3>${stats.overdue_tasks || 0}</h3><p>Overdue</p></div></div>
+            <div class="stat-card"><i class="fas fa-folder"></i><div><h3>${stats.total_projects || 0}</h3><p>Projects</p></div></div>
+        `;
+        
+        const tasksRes = await fetch('/api/tasks');
+        const tasks = await tasksRes.json();
+        const recent = tasks.slice(0, 4);
+        
+        if (recent.length === 0) {
+            document.getElementById('recentList').innerHTML = '<div class="empty-state">No tasks yet. Create your first task!</div>';
+        } else {
+            document.getElementById('recentList').innerHTML = recent.map(t => `
+                <div class="activity-item">
+                    <div class="activity-icon ${t.status}"></div>
+                    <div class="activity-content">
+                        <strong>${t.title}</strong>
+                        <span>${t.project_name || 'No project'} • ${new Date(t.due_date).toLocaleDateString()}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch(e) {
+        console.error('Dashboard error:', e);
+    }
+}
+
+async function loadProjects() {
+    try {
+        const response = await fetch('/api/projects');
+        const projects = await response.json();
+        const grid = document.getElementById('projectsGrid');
+        
+        if (projects.length === 0) {
+            grid.innerHTML = '<div class="empty-state">✨ No projects. Create one!</div>';
+            return;
+        }
+        
+        grid.innerHTML = projects.map(p => `
+            <div class="project-item">
+                <div class="project-icon"><i class="fas fa-folder-open"></i></div>
+                <div class="project-info">
+                    <h4>${escapeHtml(p.name)}</h4>
+                    <p>${escapeHtml(p.description) || 'No description'}</p>
+                    <div class="project-meta">
+                        <span><i class="fas fa-tasks"></i> ${p.task_count || 0} tasks</span>
+                        <span><i class="fas fa-check"></i> ${p.completed_tasks || 0} done</span>
+                    </div>
+                </div>
+                ${(currentUser?.role === 'admin' || p.created_by === currentUser?.id) ? `<button class="delete-icon" onclick="deleteProject(${p.id})"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+        `).join('');
+    } catch(e) {
+        console.error('Projects error:', e);
+    }
+}
+
+async function loadTasks() {
+    try {
+        const response = await fetch('/api/tasks');
+        allTasks = await response.json();
+        renderTasks(allTasks);
+    } catch(e) {
+        console.error('Tasks error:', e);
+    }
+}
+
+function renderTasks(tasks) {
+    const filter = document.querySelector('.filter-chip.active')?.dataset.filter || 'all';
+    let filtered = tasks;
+    if (filter !== 'all') filtered = tasks.filter(t => t.status === filter);
+    
+    const container = document.getElementById('tasksContainer');
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state">🎯 No tasks found</div>';
+        return;
+    }
+    
+    container.innerHTML = filtered.map(t => `
+        <div class="task-card ${t.is_overdue ? 'overdue' : ''}">
+            <div class="task-left">
+                <div class="task-check" onclick="toggleTaskStatus(${t.id}, '${t.status === 'completed' ? 'pending' : 'completed'}')">
+                    <i class="fas ${t.status === 'completed' ? 'fa-check-circle' : 'fa-circle'}"></i>
+                </div>
+                <div class="task-content">
+                    <div class="task-title ${t.status === 'completed' ? 'completed' : ''}">${escapeHtml(t.title)}</div>
+                    <div class="task-meta">
+                        <span class="priority-${t.priority}"><i class="fas fa-flag"></i> ${t.priority}</span>
+                        <span><i class="fas fa-user"></i> ${escapeHtml(t.assignee_name)}</span>
+                        <span><i class="fas fa-folder"></i> ${escapeHtml(t.project_name || 'No project')}</span>
+                        <span><i class="fas fa-calendar"></i> ${new Date(t.due_date).toLocaleDateString()}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="task-actions">
+                <select onchange="updateStatus(${t.id}, this.value)" class="status-badge status-${t.status}">
+                    <option value="pending" ${t.status === 'pending' ? 'selected' : ''}>Pending</option>
+                    <option value="in-progress" ${t.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
+                    <option value="completed" ${t.status === 'completed' ? 'selected' : ''}>Completed</option>
+                </select>
+                ${(currentUser?.role === 'admin' || t.created_by === currentUser?.id) ? `<button class="delete-task" onclick="deleteTask(${t.id})"><i class="fas fa-trash-alt"></i></button>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+async function toggleTaskStatus(id, status) {
+    try {
+        await fetch(`/api/tasks/${id}`, { 
+            method: 'PUT', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({status}) 
+        });
+        showNotification('Task updated', 'success');
+        loadTasks();
+        loadDashboard();
+    } catch(e) {
+        showNotification('Error updating task', 'error');
+    }
+}
+
+async function updateStatus(id, status) {
+    try {
+        await fetch(`/api/tasks/${id}`, { 
+            method: 'PUT', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({status}) 
+        });
+        showNotification('Status changed', 'success');
+        loadTasks();
+        loadDashboard();
+    } catch(e) {
+        showNotification('Error updating status', 'error');
+    }
+}
+
+async function loadTeam() {
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        
+        document.getElementById('teamGrid').innerHTML = users.map(u => `
+            <div class="team-member">
+                <div class="member-avatar"><i class="fas fa-user-circle"></i></div>
+                <div class="member-info">
+                    <h4>${escapeHtml(u.username)}</h4>
+                    <p>${escapeHtml(u.email)}</p>
+                    <span class="member-role ${u.role}">${u.role}</span>
+                </div>
+            </div>
+        `).join('');
+    } catch(e) {
+        console.error('Team error:', e);
+    }
+}
+
+async function deleteTask(id) {
+    if (confirm('Delete this task?')) {
+        try {
+            await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            showNotification('Task deleted', 'success');
+            loadTasks();
+            loadDashboard();
+        } catch(e) {
+            showNotification('Error deleting task', 'error');
+        }
+    }
+}
+
+async function deleteProject(id) {
+    if (confirm('Delete project and all its tasks?')) {
+        try {
+            await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+            showNotification('Project deleted', 'success');
+            loadProjects();
+            loadDashboard();
+        } catch(e) {
+            showNotification('Error deleting project', 'error');
+        }
+    }
+}
+
+function openProjectModal() { 
+    document.getElementById('projectModal').style.display = 'flex'; 
+}
+
+function closeProjectModal() { 
+    document.getElementById('projectModal').style.display = 'none'; 
+    document.getElementById('projectForm').reset();
+}
+
+async function openTaskModal() {
+    await loadSelectOptions();
+    document.getElementById('taskModal').style.display = 'flex';
+}
+
+function closeTaskModal() { 
+    document.getElementById('taskModal').style.display = 'none'; 
+    document.getElementById('taskForm').reset();
+}
+
+async function loadSelectOptions() {
+    try {
+        const projRes = await fetch('/api/projects');
+        const projects = await projRes.json();
+        const usersRes = await fetch('/api/users');
+        const users = await usersRes.json();
+        
+        document.getElementById('taskProjectId').innerHTML = '<option value="">Select project</option>' + 
+            projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+        
+        document.getElementById('taskAssigneeId').innerHTML = '<option value="">Assign to</option>' + 
+            users.map(u => `<option value="${u.id}">${escapeHtml(u.username)}</option>`).join('');
+    } catch(e) {
+        console.error('Error loading options:', e);
+    }
+}
+
+async function createProject(e) {
+    e.preventDefault();
+    const name = document.getElementById('projName').value;
+    const description = document.getElementById('projDesc').value;
+    
+    try {
+        const response = await fetch('/api/projects', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({name, description}) 
+        });
+        
+        if (response.ok) {
+            closeProjectModal();
+            showNotification('Project created', 'success');
+            loadProjects();
+            loadDashboard();
+        } else {
+            const data = await response.json();
+            showNotification(data.error || 'Failed to create project', 'error');
+        }
+    } catch(e) {
+        showNotification('Error creating project', 'error');
+    }
+}
+
+async function createTask(e) {
+    e.preventDefault();
+    const title = document.getElementById('taskTitle').value;
+    const description = document.getElementById('taskDesc').value;
+    const project_id = parseInt(document.getElementById('taskProjectId').value);
+    const assigned_to = parseInt(document.getElementById('taskAssigneeId').value);
+    const priority = document.getElementById('taskPriority').value;
+    const due_date = document.getElementById('taskDueDate').value;
+    
+    if (!due_date) {
+        showNotification('Please select due date', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/tasks', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({title, description, project_id, assigned_to, priority, due_date}) 
+        });
+        
+        if (response.ok) {
+            closeTaskModal();
+            showNotification('Task created', 'success');
+            loadTasks();
+            loadDashboard();
+        } else {
+            const data = await response.json();
+            showNotification(data.error || 'Failed to create task', 'error');
+        }
+    } catch(e) {
+        showNotification('Error creating task', 'error');
+    }
+}
+
+async function handleLogout() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/';
+    } catch(e) {
+        window.location.href = '/';
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// Close modals on outside click
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal-overlay')) {
+        event.target.style.display = 'none';
+    }
+}
+
+// Initialize
+loadUser();
+loadDashboard();
+</script>
+{% endblock %}
